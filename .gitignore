@@ -1,0 +1,25 @@
+# Internal working document, not part of the submission
+PLAN.md
+
+# Build output
+bin/
+obj/
+artifacts/
+*.user
+*.suo
+
+# IDE
+.vs/
+.idea/
+.vscode/
+
+# Test and benchmark output
+TestResults/
+BenchmarkDotNet.Artifacts/
+*.trx
+coverage*.xml
+
+# Generated data files and temporary sort runs
+*.tmp
+*.run
+data/

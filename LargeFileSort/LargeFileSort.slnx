@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+  </Folder>
+  <Project Path="FileGenerator/FileGenerator.csproj" />
+  <Project Path="tests/FileGenerator.Tests/FileGenerator.Tests.csproj" />
+</Solution>
