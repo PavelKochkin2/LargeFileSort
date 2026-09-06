@@ -3,6 +3,10 @@
     <File Path=".editorconfig" />
     <File Path="Directory.Build.props" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FileSorter.Tests/FileSorter.Tests.csproj" />
+  </Folder>
   <Project Path="FileGenerator/FileGenerator.csproj" />
+  <Project Path="FileSorter/FileSorter.csproj" />
   <Project Path="tests/FileGenerator.Tests/FileGenerator.Tests.csproj" />
 </Solution>
