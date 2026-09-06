@@ -69,6 +69,21 @@ public class GeneratorCliTests
             () => GeneratorCli.Parse(["--output", "a.txt", "--output", "b.txt", "--size", "1024"]));
     }
 
+    [Theory]
+    [InlineData("--unique-strings")]
+    [InlineData("--max-number")]
+    public void Parse_DuplicateValuedFlag_Throws(string flag)
+    {
+        Assert.Throws<ArgumentException>(
+            () => GeneratorCli.Parse(["--output", "out.txt", "--size", "1024", flag, "8", flag, "9"]));
+    }
+
+    [Fact]
+    public void Usage_ListsTbSuffix()
+    {
+        Assert.Contains("TB", GeneratorCli.Usage, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Parse_SizeBelowMinimum_Throws()
     {

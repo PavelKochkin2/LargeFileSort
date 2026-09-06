@@ -53,6 +53,12 @@ public class FileWriterTests
     [Theory]
     [InlineData(5)]
     [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(10)]
+    [InlineData(11)]
+    [InlineData(12)]
+    [InlineData(13)]
     [InlineData(17)]
     [InlineData(64)]
     [InlineData(1000)]
@@ -117,7 +123,69 @@ public class FileWriterTests
     }
 
     [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void Write_PadsFactoryLineWhenLeftoverIsShort(int leftover)
+    {
+        var probe = new LineFactory(4, 100, seed: 42);
+        GeneratedLine first = probe.Next();
+        int firstLength = Encoding.UTF8.GetByteCount(first.ToFileText()) + 1;
+        long size = firstLength + leftover;
+        string path = NewTempPath();
+
+        try
+        {
+            _writer.Write(path, size, new LineFactory(4, 100, seed: 42));
+
+            Assert.Equal(size, new FileInfo(path).Length);
+            string[] bodies = ReadBodies(path);
+            Assert.Single(bodies);
+            Assert.Equal(first.ToFileText() + new string(' ', leftover), bodies[0]);
+            Assert.Matches(LinePattern, bodies[0]);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Write_FittedLineKeepsFactoryNumberWhenItFits()
+    {
+        var probe = new LineFactory(4, 100, seed: 42);
+        GeneratedLine first = probe.Next();
+        int fullLength = Encoding.UTF8.GetByteCount(first.ToFileText()) + 1;
+        int minKeptNumberLength = first.Number.ToString().Length + 4;
+        long size = Math.Max(minKeptNumberLength, fullLength - 1);
+        string path = NewTempPath();
+
+        try
+        {
+            _writer.Write(path, size, new LineFactory(4, 100, seed: 42));
+
+            Assert.Equal(size, new FileInfo(path).Length);
+            string body = Assert.Single(ReadBodies(path));
+            Assert.StartsWith($"{first.Number}. ", body);
+            string actualText = body[(body.IndexOf(' ') + 1)..].TrimEnd();
+            Assert.StartsWith(actualText, first.Text);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
     [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(10)]
+    [InlineData(11)]
+    [InlineData(12)]
+    [InlineData(13)]
     [InlineData(17)]
     [InlineData(256)]
     public void Write_EveryLineMatchesContract(long size)

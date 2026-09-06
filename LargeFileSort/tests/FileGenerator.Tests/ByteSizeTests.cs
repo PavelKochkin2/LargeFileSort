@@ -26,6 +26,12 @@ public class ByteSizeTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
+    public void Parse_MissingSize_ThrowsArgumentException(string input)
+    {
+        Assert.Throws<ArgumentException>(() => ByteSize.Parse(input));
+    }
+
+    [Theory]
     [InlineData("abc")]
     [InlineData("1.5GB")]
     [InlineData("-1")]
@@ -33,7 +39,7 @@ public class ByteSizeTests
     [InlineData("1XB")]
     public void Parse_InvalidSize_ThrowsFormatException(string input)
     {
-        Assert.ThrowsAny<Exception>(() => ByteSize.Parse(input));
+        Assert.Throws<FormatException>(() => ByteSize.Parse(input));
     }
 
     [Fact]

@@ -3,7 +3,7 @@ namespace FileGenerator.Cli;
 public static class GeneratorCli
 {
     public const string Usage =
-        "Usage: FileGenerator --output <path> --size <bytes|KB|MB|GB> [--seed <int>] [--unique-strings <n>] [--max-number <n>] [--force]";
+        "Usage: FileGenerator --output <path> --size <bytes|KB|MB|GB|TB> [--seed <int>] [--unique-strings <n>] [--max-number <n>] [--force]";
 
     public static GeneratorOptions Parse(string[] args)
     {
@@ -12,8 +12,8 @@ public static class GeneratorCli
         string? outputPath = null;
         long? sizeInBytes = null;
         int? seed = null;
-        int uniqueStringCount = 1000;
-        int maxNumber = 1_000_000_000;
+        int? uniqueStringCount = null;
+        int? maxNumber = null;
         bool force = false;
 
         for (int i = 0; i < args.Length; i++)
@@ -33,9 +33,11 @@ public static class GeneratorCli
                     seed = ParseInt(ReadValue(args, ref i, "--seed"), "--seed");
                     break;
                 case "--unique-strings":
+                    EnsureNotSet(uniqueStringCount, "--unique-strings");
                     uniqueStringCount = ParsePositiveInt(ReadValue(args, ref i, "--unique-strings"), "--unique-strings");
                     break;
                 case "--max-number":
+                    EnsureNotSet(maxNumber, "--max-number");
                     maxNumber = ParsePositiveInt(ReadValue(args, ref i, "--max-number"), "--max-number");
                     break;
                 case "--force":
@@ -69,8 +71,8 @@ public static class GeneratorCli
             OutputPath = outputPath,
             SizeInBytes = sizeInBytes.Value,
             Seed = seed ?? Random.Shared.Next(),
-            UniqueStringCount = uniqueStringCount,
-            MaxNumber = maxNumber,
+            UniqueStringCount = uniqueStringCount ?? 1000,
+            MaxNumber = maxNumber ?? 1_000_000_000,
             Force = force,
         };
     }

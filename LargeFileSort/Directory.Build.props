@@ -4,10 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NuGetAudit>false</NuGetAudit>
     <LangVersion>latest</LangVersion>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(OutputType)' == 'Exe'">
-    <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 </Project>
