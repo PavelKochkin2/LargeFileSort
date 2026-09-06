@@ -2,7 +2,7 @@ using FileSorter.Sorting.Parsing;
 
 namespace FileSorter.Sorting;
 
-public sealed class SortOptions
+public sealed record SortOptions
 {
     public required string InputPath { get; init; }
     public required string OutputPath { get; init; }
@@ -10,6 +10,7 @@ public sealed class SortOptions
     public int ChunkSize { get; init; } = ChunkReader.DefaultBufferSize;
     public int MaxLineLength { get; init; } = ChunkReader.DefaultMaxLineLength;
     public int MaxFanIn { get; init; } = 64;
+    // Library default is sequential; SorterCli sets min(CPU, 8) for the executable.
     public int DegreeOfParallelism { get; init; } = 1;
     public long? MaxMemoryBytes { get; init; }
     public bool KeepTemp { get; init; }

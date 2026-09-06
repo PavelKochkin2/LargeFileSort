@@ -15,6 +15,7 @@ public sealed class KWayMerger
         ArgumentNullException.ThrowIfNull(outputPath);
 
         var readers = new RunReader[runPaths.Count];
+        string partialPath = outputPath + ".partial";
 
         try
         {
@@ -29,25 +30,41 @@ public sealed class KWayMerger
                 }
             }
 
-            using FileStream output = File.Create(outputPath);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            while (heap.Count > 0)
+            using (FileStream output = new(
+                partialPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                1024 * 1024,
+                FileOptions.SequentialScan))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                int runIndex = heap.Peek();
-                LineRef line = readers[runIndex].Current;
-                output.Write(readers[runIndex].Buffer.AsSpan(line.Start, line.End - line.Start));
-                output.WriteByte((byte)'\n');
+                while (heap.Count > 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    int runIndex = heap.Peek();
+                    LineRef line = readers[runIndex].Current;
+                    output.Write(readers[runIndex].Buffer.AsSpan(line.Start, line.End - line.Start));
+                    output.WriteByte((byte)'\n');
 
-                if (readers[runIndex].MoveNext())
-                {
-                    heap.ReplaceTop();
-                }
-                else
-                {
-                    heap.RemoveTop();
+                    if (readers[runIndex].MoveNext())
+                    {
+                        heap.ReplaceTop();
+                    }
+                    else
+                    {
+                        heap.RemoveTop();
+                    }
                 }
             }
+
+            File.Move(partialPath, outputPath, overwrite: true);
+        }
+        catch
+        {
+            TryDelete(partialPath);
+            throw;
         }
         finally
         {
@@ -63,5 +80,22 @@ public sealed class KWayMerger
                 readers[left].Current,
                 readers[right].Buffer,
                 readers[right].Current);
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 }

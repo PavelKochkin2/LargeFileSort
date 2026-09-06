@@ -12,19 +12,7 @@ Console.CancelKeyPress += (_, e) =>
 try
 {
     (SortOptions parsed, bool verify) = SorterCli.Parse(args);
-    SortOptions options = new()
-    {
-        InputPath = parsed.InputPath,
-        OutputPath = parsed.OutputPath,
-        TempDirectory = parsed.TempDirectory,
-        ChunkSize = parsed.ChunkSize,
-        MaxLineLength = parsed.MaxLineLength,
-        MaxFanIn = parsed.MaxFanIn,
-        DegreeOfParallelism = parsed.DegreeOfParallelism,
-        MaxMemoryBytes = parsed.MaxMemoryBytes,
-        KeepTemp = parsed.KeepTemp,
-        CancellationToken = cts.Token,
-    };
+    SortOptions options = parsed with { CancellationToken = cts.Token };
 
     SortResult result = new ExternalSorter().Sort(options);
     Console.WriteLine(
@@ -43,7 +31,7 @@ catch (Exception ex) when (IsCancellation(ex))
     Console.Error.WriteLine("Sort cancelled.");
     return 1;
 }
-catch (Exception ex) when (ex is ArgumentException or FormatException or IOException or UnauthorizedAccessException or InvalidDataException or OverflowException)
+catch (Exception ex) when (ex is ArgumentException or FormatException or IOException or UnauthorizedAccessException or InvalidDataException or OverflowException or OutOfMemoryException)
 {
     Console.Error.WriteLine(ex.Message);
     return 1;

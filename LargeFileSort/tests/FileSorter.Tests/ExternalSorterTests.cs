@@ -196,21 +196,79 @@ public class ExternalSorterTests
     }
 
     [Fact]
-    public void Sort_CancelledToken_Throws()
+    public void Sort_ChunkSizeLargerThanMaxLineLength_UsesChunkSizeForRunCount()
     {
         using var files = new TempSortFiles();
-        WriteInput(files.Input, "2. B\n1. A");
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        string[] lines = Enumerable.Range(0, 8000).Select(i => $"{i}. A").ToArray();
+        WriteInput(files.Input, string.Join('\n', lines));
+        long fileLength = new FileInfo(files.Input).Length;
 
-        Assert.Throws<OperationCanceledException>(() =>
-            _sorter.Sort(new SortOptions
+        const int chunkSize = 16 * 1024;
+        const int maxLineLength = 64;
+        SortResult result = _sorter.Sort(files.Options(chunkSize: chunkSize, maxLineLength: maxLineLength));
+
+        int ifUsingChunk = (int)Math.Ceiling(fileLength / (double)chunkSize);
+        int ifClampedToMaxLine = (int)Math.Ceiling(fileLength / (double)maxLineLength);
+
+        Assert.False(result.UsedFastPath);
+        Assert.InRange(result.RunCount, Math.Max(2, ifUsingChunk - 1), ifUsingChunk + 2);
+        Assert.True(result.RunCount < ifClampedToMaxLine / 4);
+        Assert.Equal(Oracle(lines), ReadLines(files.Output));
+    }
+
+    [Fact]
+    public void Sort_KeepTemp_LeavesRunFiles()
+    {
+        using var files = new TempSortFiles();
+        WriteInput(files.Input, "3. C\n1. A\n2. B\n");
+
+        _sorter.Sort(files.Options(chunkSize: 8) with { KeepTemp = true });
+
+        Assert.NotEmpty(Directory.GetFiles(files.Temp, "*.run"));
+        Assert.Equal(["1. A", "2. B", "3. C"], ReadLines(files.Output));
+    }
+
+    [Fact]
+    public void Sort_CancelledMidFlight_CleansTempAndDoesNotLeaveOutput()
+    {
+        using var files = new TempSortFiles();
+        string[] lines = Enumerable.Range(0, 2500).Select(i => $"{2500 - i}. Item {i}").ToArray();
+        WriteInput(files.Input, string.Join('\n', lines));
+
+        using var cts = new CancellationTokenSource();
+        SortOptions options = files.Options(chunkSize: 32, maxFanIn: 3) with
+        {
+            CancellationToken = cts.Token,
+        };
+
+        Exception? error = null;
+        var thread = new Thread(() =>
+        {
+            try
             {
-                InputPath = files.Input,
-                OutputPath = files.Output,
-                ChunkSize = 8,
-                CancellationToken = cts.Token,
-            }));
+                _sorter.Sort(options);
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+        })
+        {
+            IsBackground = true,
+        };
+        thread.Start();
+
+        bool started = SpinWait.SpinUntil(
+            () => Directory.Exists(files.Temp) && Directory.GetFiles(files.Temp, "*.run").Length > 0,
+            TimeSpan.FromSeconds(15));
+        cts.Cancel();
+        Assert.True(started, "phase 1 never created a run file");
+        Assert.True(thread.Join(TimeSpan.FromSeconds(15)));
+
+        Assert.IsAssignableFrom<OperationCanceledException>(error);
+        Assert.True(!Directory.Exists(files.Temp) || Directory.GetFiles(files.Temp, "*.run").Length == 0);
+        Assert.False(File.Exists(files.Output));
+        Assert.False(File.Exists(files.Output + ".partial"));
     }
 
     private static void WriteInput(string path, string content)

@@ -122,6 +122,31 @@ public class KWayMergerTests
     }
 
     [Fact]
+    public void Merge_Cancelled_DoesNotLeaveOutput()
+    {
+        string run = WriteRun("1. Apple\n2. Banana\n3. Cherry\n");
+        string output = NewTempPath();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        try
+        {
+            Assert.Throws<OperationCanceledException>(
+                () => _merger.Merge([run], output, cancellationToken: cts.Token));
+            Assert.False(File.Exists(output));
+            Assert.False(File.Exists(output + ".partial"));
+        }
+        finally
+        {
+            File.Delete(run);
+            if (File.Exists(output))
+            {
+                File.Delete(output);
+            }
+        }
+    }
+
+    [Fact]
     public void Merge_ThreeRuns_MatchesOracle()
     {
         string[] runTexts =

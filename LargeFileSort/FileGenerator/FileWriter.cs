@@ -6,6 +6,7 @@ namespace FileGenerator;
 public sealed class FileWriter
 {
     public const int MinLineLength = 5;
+    private const int NumberTextSeparatorLength = 2;
 
     private byte[] _buffer = new byte[256];
 
@@ -68,7 +69,7 @@ public sealed class FileWriter
     private int Encode(GeneratedLine line, int padSpaces)
     {
         int textBytes = Encoding.UTF8.GetByteCount(line.Text);
-        EnsureCapacity(11 + 2 + textBytes + padSpaces + 1);
+        EnsureCapacity(11 + NumberTextSeparatorLength + textBytes + padSpaces + 1);
 
         if (!Utf8Formatter.TryFormat(line.Number, _buffer, out int written))
         {
@@ -94,7 +95,7 @@ public sealed class FileWriter
             throw new InvalidOperationException("Failed to format line number.");
         }
 
-        int prefixLength = numberLength + 2;
+        int prefixLength = numberLength + NumberTextSeparatorLength;
         int textBudget = remaining - 1 - prefixLength;
 
         if (textBudget >= 1)
@@ -108,7 +109,7 @@ public sealed class FileWriter
             return written;
         }
 
-        const int fallbackPrefixLength = 3;
+        const int fallbackPrefixLength = 1 + NumberTextSeparatorLength;
         int fill = remaining - fallbackPrefixLength - 1;
         _buffer[0] = (byte)'1';
         _buffer[1] = (byte)'.';
@@ -120,16 +121,19 @@ public sealed class FileWriter
 
     private static int WriteText(Span<byte> dest, string text)
     {
-        int textBytes = Encoding.UTF8.GetByteCount(text);
-        if (textBytes <= dest.Length)
+        Encoding.UTF8.GetEncoder().Convert(
+            text.AsSpan(),
+            dest,
+            flush: true,
+            out _,
+            out int bytesUsed,
+            out _);
+
+        if (bytesUsed < dest.Length)
         {
-            Encoding.UTF8.GetBytes(text, dest);
-            dest[textBytes..].Fill((byte)' ');
-            return dest.Length;
+            dest[bytesUsed..].Fill((byte)' ');
         }
 
-        int charsToCopy = dest.Length;
-        Encoding.UTF8.GetBytes(text.AsSpan(0, charsToCopy), dest);
         return dest.Length;
     }
 

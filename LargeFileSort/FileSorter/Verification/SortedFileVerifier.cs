@@ -9,37 +9,39 @@ public static class SortedFileVerifier
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
 
-        ulong inputHash = HashLines(inputPath, checkSorted: false);
-        ulong outputHash = HashLines(outputPath, checkSorted: true);
+        (ulong inputHash, long inputCount) = HashLines(inputPath, checkSorted: false);
+        (ulong outputHash, long outputCount) = HashLines(outputPath, checkSorted: true);
 
-        if (inputHash != outputHash)
+        if (inputCount != outputCount || inputHash != outputHash)
         {
             throw new InvalidDataException("Output is not a permutation of the input.");
         }
     }
 
-    private static ulong HashLines(string path, bool checkSorted)
+    private static (ulong Sum, long Count) HashLines(string path, bool checkSorted)
     {
         using var reader = new ChunkReader(File.OpenRead(path), ChunkReader.DefaultBufferSize, ChunkReader.DefaultMaxLineLength);
         ulong sum = 0;
+        long count = 0;
         byte[]? previous = null;
 
         while (reader.MoveNextChunk())
         {
             foreach (LineRef line in reader.Lines)
             {
-                byte[] current = reader.Buffer.AsSpan(line.Start, line.End - line.Start).ToArray();
+                ReadOnlySpan<byte> current = reader.Buffer.AsSpan(line.Start, line.End - line.Start);
                 if (checkSorted && previous is not null && LineComparer.CompareLines(previous, current) > 0)
                 {
                     throw new InvalidDataException("Output is not sorted.");
                 }
 
                 sum += Fnv1A64(current);
-                previous = current;
+                count++;
+                previous = current.ToArray();
             }
         }
 
-        return sum;
+        return (sum, count);
     }
 
     private static ulong Fnv1A64(ReadOnlySpan<byte> data)

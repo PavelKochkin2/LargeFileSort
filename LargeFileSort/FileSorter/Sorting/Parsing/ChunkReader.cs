@@ -9,6 +9,7 @@ public sealed class ChunkReader : IDisposable
 
     private readonly Stream _stream;
     private readonly int _maxLineLength;
+    private readonly int _maxBufferSize;
     private readonly bool _leaveOpen;
 
     private byte[] _buffer;
@@ -35,8 +36,9 @@ public sealed class ChunkReader : IDisposable
 
         _stream = stream;
         _maxLineLength = maxLineLength;
+        _maxBufferSize = Math.Max(bufferSize, maxLineLength);
         _leaveOpen = leaveOpen;
-        _buffer = new byte[Math.Min(bufferSize, maxLineLength)];
+        _buffer = new byte[bufferSize];
     }
 
     public byte[] Buffer => _buffer;
@@ -175,6 +177,12 @@ public sealed class ChunkReader : IDisposable
     {
         _lineNumber++;
 
+        if (end - start > _maxLineLength)
+        {
+            throw new FormatException(
+                $"Line exceeds max length {_maxLineLength} at byte offset {_bufferFileOffset + start}.");
+        }
+
         LineRef line;
         try
         {
@@ -215,13 +223,13 @@ public sealed class ChunkReader : IDisposable
 
     private void GrowBuffer()
     {
-        if (_buffer.Length >= _maxLineLength)
+        if (_filled >= _maxLineLength || _buffer.Length >= _maxBufferSize)
         {
             throw new FormatException(
                 $"Line exceeds max length {_maxLineLength} at byte offset {_bufferFileOffset}.");
         }
 
-        int newSize = Math.Min(_maxLineLength, _buffer.Length * 2);
+        int newSize = Math.Min(_maxBufferSize, _buffer.Length * 2);
         byte[] grown = new byte[newSize];
         System.Buffer.BlockCopy(_buffer, 0, grown, 0, _filled);
         _buffer = grown;

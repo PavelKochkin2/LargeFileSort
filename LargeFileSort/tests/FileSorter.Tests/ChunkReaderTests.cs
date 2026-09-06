@@ -103,13 +103,51 @@ public class ChunkReaderTests
     }
 
     [Fact]
+    public void LineLongerThanMaxLength_ThrowsEvenWhenBufferIsLarger()
+    {
+        byte[] data = Utf8("1. This line is too long\n");
+
+        FormatException ex = Assert.Throws<FormatException>(
+            () => ReadAll(data, bufferSize: 1024, maxLineLength: 8));
+
+        Assert.Contains("max length", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Buffer_StartsAtRequestedSize_EvenWhenLargerThanMaxLineLength()
+    {
+        using var reader = new ChunkReader(new MemoryStream(Utf8("1. A\n")), bufferSize: 2048, maxLineLength: 32);
+
+        Assert.Equal(2048, reader.Buffer.Length);
+        Assert.True(reader.MoveNextChunk());
+        int payload = 0;
+        foreach (LineRef line in reader.Lines)
+        {
+            payload += line.End - line.Start + 1;
+        }
+
+        Assert.True(payload <= 2048);
+    }
+
+    [Fact]
     public void InvalidLine_IncludesLineNumberAndByteOffset()
     {
         FormatException ex = Assert.Throws<FormatException>(
             () => ReadAll(Utf8("1. Apple\nnot-a-line\n"), bufferSize: 64));
 
         Assert.Contains("line 2", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("offset 9", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InvalidLine_ReportsFileOffsetAfterBomAndLaterBuffer()
+    {
+        byte[] data = [0xEF, 0xBB, 0xBF, ..Utf8("1. Apple\n2. Banana\nnot-a-line\n")];
+
+        FormatException ex = Assert.Throws<FormatException>(() => ReadAll(data, bufferSize: 16));
+
+        Assert.Contains("line 3", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("offset 22", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

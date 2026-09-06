@@ -113,6 +113,7 @@ public class FileWriterTests
                 .Select(line => line[(line.IndexOf(' ') + 1)..])
                 .ToArray();
 
+
             Assert.InRange(texts.Distinct().Count(), 1, 3);
             Assert.True(texts.Length > texts.Distinct().Count());
         }
@@ -131,7 +132,7 @@ public class FileWriterTests
     {
         var probe = new LineFactory(4, 100, seed: 42);
         GeneratedLine first = probe.Next();
-        int firstLength = Encoding.UTF8.GetByteCount(first.ToFileText()) + 1;
+        int firstLength = Encoding.UTF8.GetByteCount(ToFileText(first)) + 1;
         long size = firstLength + leftover;
         string path = NewTempPath();
 
@@ -142,7 +143,7 @@ public class FileWriterTests
             Assert.Equal(size, new FileInfo(path).Length);
             string[] bodies = ReadBodies(path);
             Assert.Single(bodies);
-            Assert.Equal(first.ToFileText() + new string(' ', leftover), bodies[0]);
+            Assert.Equal(ToFileText(first) + new string(' ', leftover), bodies[0]);
             Assert.Matches(LinePattern, bodies[0]);
         }
         finally
@@ -156,7 +157,7 @@ public class FileWriterTests
     {
         var probe = new LineFactory(4, 100, seed: 42);
         GeneratedLine first = probe.Next();
-        int fullLength = Encoding.UTF8.GetByteCount(first.ToFileText()) + 1;
+        int fullLength = Encoding.UTF8.GetByteCount(ToFileText(first)) + 1;
         int minKeptNumberLength = first.Number.ToString().Length + 4;
         long size = Math.Max(minKeptNumberLength, fullLength - 1);
         string path = NewTempPath();
@@ -211,6 +212,8 @@ public class FileWriterTests
             File.Delete(path);
         }
     }
+
+    private static string ToFileText(GeneratedLine line) => $"{line.Number}. {line.Text}";
 
     private static string[] ReadBodies(string path)
     {

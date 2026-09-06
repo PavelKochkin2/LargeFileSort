@@ -12,9 +12,6 @@ public readonly struct LineComparer : IComparer<LineRef>
 
     public int Compare(LineRef x, LineRef y) => Compare(_buffer, x, _buffer, y);
 
-    public static int Compare(ReadOnlySpan<byte> buffer, LineRef left, LineRef right) =>
-        Compare(buffer, left, buffer, right);
-
     public static int CompareLines(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
     {
         return Compare(left, LineParser.Parse(left), right, LineParser.Parse(right));

@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Corporate feeds reject nuget.org vulnerability audits (NU1900 / 401). -->
     <NuGetAudit>false</NuGetAudit>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>

@@ -5,7 +5,7 @@ try
 {
     GeneratorOptions options = GeneratorCli.Parse(args);
 
-    if (!OutputPathGuard.CanWrite(options.OutputPath, options.Force))
+    if (File.Exists(options.OutputPath) && !options.Force)
     {
         Console.Error.WriteLine($"File '{options.OutputPath}' already exists. Use --force to overwrite.");
         return 1;

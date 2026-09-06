@@ -12,7 +12,13 @@ public sealed class RunBuilder
         LineRef[] sorted = lines.ToArray();
         sorted.AsSpan().Sort(new LineComparer(buffer));
 
-        using FileStream stream = File.Create(path);
+        using FileStream stream = new(
+            path,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            1024 * 1024,
+            FileOptions.SequentialScan);
         foreach (LineRef line in sorted)
         {
             stream.Write(buffer.AsSpan(line.Start, line.End - line.Start));

@@ -37,7 +37,6 @@ public sealed class ExternalSorter
         }
 
         long fileLength = new FileInfo(options.InputPath).Length;
-        EnsureDiskSpace(options.OutputPath, fileLength);
 
         if (fileLength == 0)
         {
@@ -47,6 +46,7 @@ public sealed class ExternalSorter
 
         if (fileLength <= options.ChunkSize)
         {
+            EnsureDiskSpace(options.OutputPath, fileLength);
             SortInMemory(options);
             return new SortResult { RunCount = 0, MergePassCount = 0, UsedFastPath = true };
         }
@@ -56,6 +56,7 @@ public sealed class ExternalSorter
             ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(options.OutputPath)) ?? ".", ".sort-tmp")
             : options.TempDirectory!;
         bool createdDefaultTemp = useDefaultTemp && !Directory.Exists(tempDirectory);
+        EnsureDiskSpace(options.OutputPath, tempDirectory, fileLength);
         Directory.CreateDirectory(tempDirectory);
 
         var allTempFiles = new List<string>();
@@ -114,34 +115,39 @@ public sealed class ExternalSorter
         }
     }
 
-    private static void SortInMemory(SortOptions options)
+    private void SortInMemory(SortOptions options)
     {
-        using FileStream input = new(
-            options.InputPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            options.ChunkSize,
-            FileOptions.SequentialScan);
+        using FileStream input = OpenInput(options);
         using var reader = new ChunkReader(input, options.ChunkSize, options.MaxLineLength, leaveOpen: true);
 
-        var lines = new List<byte[]>();
-        while (reader.MoveNextChunk())
+        if (!reader.MoveNextChunk())
         {
-            options.CancellationToken.ThrowIfCancellationRequested();
-            foreach (LineRef line in reader.Lines)
-            {
-                lines.Add(reader.Buffer.AsSpan(line.Start, line.End - line.Start).ToArray());
-            }
+            File.WriteAllBytes(options.OutputPath, []);
+            return;
         }
 
-        lines.Sort(static (left, right) => LineComparer.CompareLines(left, right));
+        options.CancellationToken.ThrowIfCancellationRequested();
+        WriteOutputAtomically(options.OutputPath, reader.Buffer, reader.Lines);
 
-        using FileStream output = File.Create(options.OutputPath);
-        foreach (byte[] line in lines)
+        if (reader.MoveNextChunk())
         {
-            output.Write(line);
-            output.WriteByte((byte)'\n');
+            TryDelete(options.OutputPath);
+            throw new InvalidOperationException("Fast path expected a single chunk.");
+        }
+    }
+
+    private void WriteOutputAtomically(string outputPath, byte[] buffer, ReadOnlySpan<LineRef> lines)
+    {
+        string partialPath = outputPath + ".partial";
+        try
+        {
+            _runBuilder.Write(partialPath, buffer, lines);
+            File.Move(partialPath, outputPath, overwrite: true);
+        }
+        catch
+        {
+            TryDelete(partialPath);
+            throw;
         }
     }
 
@@ -187,7 +193,7 @@ public sealed class ExternalSorter
         List<string> allTempFiles,
         List<string> currentRuns)
     {
-        using var work = new BlockingCollection<ChunkWork>();
+        using var work = new BlockingCollection<ChunkWork>(boundedCapacity: MemoryBudget.DefaultQueueDepth);
         int runIndex = 0;
         var workers = new Task[options.DegreeOfParallelism];
 
@@ -211,6 +217,7 @@ public sealed class ExternalSorter
             }, options.CancellationToken);
         }
 
+        Exception? pending = null;
         try
         {
             using FileStream input = OpenInput(options);
@@ -219,26 +226,56 @@ public sealed class ExternalSorter
             while (reader.MoveNextChunk())
             {
                 options.CancellationToken.ThrowIfCancellationRequested();
-                work.Add(ChunkWork.Copy(reader.Buffer, reader.Lines), options.CancellationToken);
+                ChunkWork chunk = ChunkWork.Copy(reader.Buffer, reader.Lines);
+                while (!work.TryAdd(chunk, 50, options.CancellationToken))
+                {
+                    if (workers.Any(static worker => worker.IsFaulted || worker.IsCanceled))
+                    {
+                        break;
+                    }
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            pending = ex;
         }
         finally
         {
             work.CompleteAdding();
-            Task.WaitAll(workers);
+            try
+            {
+                Task.WaitAll(workers);
+            }
+            catch (AggregateException aggregate)
+            {
+                pending ??= Unwrap(aggregate);
+            }
         }
+
+        if (pending is not null)
+        {
+            throw pending;
+        }
+    }
+
+    private static Exception Unwrap(AggregateException aggregate)
+    {
+        AggregateException flat = aggregate.Flatten();
+        return flat.InnerExceptions[0];
     }
 
     private static int MergeBufferSize(SortOptions options) =>
         Math.Clamp(options.ChunkSize, 64 * 1024, 1024 * 1024);
 
+    // ChunkReader already owns the read buffer; FileStream buffering would add a second full-size copy.
     private static FileStream OpenInput(SortOptions options) =>
         new(
             options.InputPath,
             FileMode.Open,
             FileAccess.Read,
             FileShare.Read,
-            options.ChunkSize,
+            bufferSize: 1,
             FileOptions.SequentialScan);
 
     private static SortOptions ApplyMemoryBudget(SortOptions options)
@@ -248,35 +285,75 @@ public sealed class ExternalSorter
             return options;
         }
 
-        int chunkSize = MemoryBudget.ResolveChunkSize(memory, options.DegreeOfParallelism);
+        int chunkSize = MemoryBudget.ResolveChunkSize(
+            memory,
+            options.DegreeOfParallelism,
+            MemoryBudget.DefaultQueueDepth);
         Console.WriteLine(
             $"Memory budget: {memory} bytes; chunk size: {chunkSize}; workers: {options.DegreeOfParallelism}.");
 
-        return new SortOptions
-        {
-            InputPath = options.InputPath,
-            OutputPath = options.OutputPath,
-            TempDirectory = options.TempDirectory,
-            ChunkSize = chunkSize,
-            MaxLineLength = options.MaxLineLength,
-            MaxFanIn = options.MaxFanIn,
-            DegreeOfParallelism = options.DegreeOfParallelism,
-            MaxMemoryBytes = options.MaxMemoryBytes,
-            KeepTemp = options.KeepTemp,
-            CancellationToken = options.CancellationToken,
-        };
+        return options with { ChunkSize = chunkSize };
     }
 
-    private static void EnsureDiskSpace(string outputPath, long inputLength)
+    private static void EnsureDiskSpace(string outputPath, long inputLength) =>
+        CheckDrive(outputPath, inputLength);
+
+    private static void EnsureDiskSpace(string outputPath, string tempDirectory, long inputLength)
     {
-        string? root = Path.GetPathRoot(Path.GetFullPath(outputPath));
+        if (SameVolume(outputPath, tempDirectory))
+        {
+            CheckDrive(outputPath, inputLength * 2);
+            return;
+        }
+
+        CheckDrive(outputPath, inputLength);
+        CheckDrive(tempDirectory, inputLength);
+    }
+
+    private static bool SameVolume(string first, string second)
+    {
+        string? firstRoot = TryGetPathRoot(first);
+        string? secondRoot = TryGetPathRoot(second);
+        return firstRoot is not null
+            && secondRoot is not null
+            && string.Equals(firstRoot, secondRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? TryGetPathRoot(string path)
+    {
+        try
+        {
+            return Path.GetPathRoot(Path.GetFullPath(path));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static void CheckDrive(string path, long needed)
+    {
+        string? root = TryGetPathRoot(path);
         if (string.IsNullOrEmpty(root))
         {
             return;
         }
 
-        long needed = inputLength * 2;
-        var drive = new DriveInfo(root);
+        DriveInfo drive;
+        try
+        {
+            drive = new DriveInfo(root);
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        if (!drive.IsReady)
+        {
+            return;
+        }
+
         if (drive.AvailableFreeSpace < needed)
         {
             throw new IOException(
